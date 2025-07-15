@@ -287,13 +287,14 @@
                 font: {
                     size: 18, /* Slightly larger font size for better readability */
                     color: '#333',
-                    face: 'Outfit', // Updated font face to Outfit
-                    strokeWidth: 1.5, /* Thinner stroke */
-                    strokeColor: '#fff',
+                    // Changed font face to include system emoji fonts and a generic fallback
+                    face: 'Outfit, "Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+                    strokeWidth: 0, // Set strokeWidth to 0 to ensure it doesn't interfere with emoji rendering
+                    strokeColor: 'transparent', // Set strokeColor to transparent
                     bold: {
                         color: '#1a202c',
                         size: 20, /* Larger bold font */
-                        face: 'Outfit' // Updated font face to Outfit
+                        face: 'Outfit, "Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif'
                     }
                 },
                 borderWidth: 1, /* Thinner border to match screenshot */
@@ -411,8 +412,8 @@
 
 
         // --- Gemini API Configuration ---
-        const API_KEY = "AIzaSyCTyBJ5dQZoWWgB14Wjd0l7heigxDRT-qs"; // API key is intentionally left blank. The environment will provide it at runtime.
-        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+        const API_KEY = ""; // API key is intentionally left blank. The environment will provide it at runtime.
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
 
         /**
          * Updates the agent status display in the bottom right corner.
@@ -540,7 +541,9 @@
             // Improved prompt for higher quality and more consistent responses
             const prompt = `You are an AI that creates new elements by combining two existing elements.
             Combine "${element1Name}" and "${element2Name}".
+            The new element MUST be a plausible, real-world concept or a commonly understood combination.
             Your response MUST ONLY contain the new element's name, followed by a single, highly relevant emoji.
+            Do NOT create fictional, abstract, or overly fantastical elements.
             Do NOT include any other text, punctuation, explanations, or conversational filler.
             Example format: "NewElement 🌟"
             Ensure the emoji is directly related to the new element.`;
