@@ -1,0 +1,775 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Craft</title>
+    <!-- Google Fonts - Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vis.js CDN for network graph visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: "Outfit", sans-serif; /* Using Outfit font for a modern look */
+            background-color: #f7fafc; /* Very light gray background, almost white */
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        /* Styling for the network graph container */
+        #network {
+            width: 100%;
+            height: 100%; /* Occupy full height of its parent */
+            background-color: #ffffff; /* White background for the graph area */
+            /* Faint dots background */
+            background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='5' cy='5' r='0.5' fill='%23e2e8f0' /%3E%3C/svg%3E");
+            background-repeat: repeat;
+            background-size: 10px 10px; /* Adjust for desired dot density */
+        }
+        /* Styling for the main content area wrapper */
+        .main-content-wrapper {
+            background-color: #ffffff; /* White background for the main graph container */
+            border-radius: 12px; /* Rounded corners */
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08); /* Stronger, softer shadow */
+            position: relative; /* For positioning the top titles and agent status */
+            overflow: hidden; /* Ensure titles don't spill out */
+        }
+        /* Styling for the sidebar sections */
+        .sidebar {
+            background-color: #ffffff; /* White background */
+            border-radius: 12px; /* More rounded corners */
+            padding: 1.5rem; /* Increased padding */
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08); /* Stronger, softer shadow */
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Hide scrollbar by default, content will scroll within */
+        }
+        /* Styling for individual element items in the list (pill-like) */
+        .element-item {
+            display: flex;
+            align-items: center;
+            padding: 0.3rem 0.7rem; /* Adjusted padding for a tighter pill look */
+            margin: 0.2rem; /* Space between pills for grid layout */
+            background-color: #ffffff; /* White background for pills */
+            border: 1px solid #e2e8f0; /* Light gray border for pills */
+            border-radius: 9999px; /* Fully rounded for pill shape */
+            box-shadow: 0 1px 2px rgba(0,0,0,0.02); /* Very subtle shadow for pills */
+            font-size: 0.9rem; /* Smaller font for list items */
+            color: #333;
+            transition: background-color 0.15s ease-in-out, transform 0.15s ease-in-out; /* Smooth hover effect */
+            cursor: pointer; /* Indicate interactivity */
+            flex-shrink: 0; /* Prevent shrinking in flex container */
+        }
+        .element-item:hover {
+            background-color: #f0f4ff; /* Light blue on hover */
+            transform: translateY(-1px); /* Slight lift effect on hover */
+        }
+        /* Highlight for selected element in sidebar */
+        .element-item.selected {
+            background-color: #e0f2fe; /* Light blue background for selected item */
+            border-color: #90cdf4; /* Blue border for selected item */
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+
+        .element-emoji {
+            font-size: 1.3rem; /* Adjusted emoji size to fit better */
+            margin-right: 0.4rem; /* Space between emoji and name */
+            line-height: 1; /* Ensure emoji aligns well */
+        }
+        /* Styling for agent activity log entries (kept for console logging, but not visible) */
+        .log-entry {
+            display: none; /* Hide agent log entries from UI as per screenshot */
+        }
+        /* Ensure content within scrollable divs can scroll */
+        .scrollable-content {
+            flex-grow: 1;
+            overflow-y: auto; /* Enable vertical scrolling */
+            padding-right: 0.5rem; /* Add some padding for scrollbar */
+            display: flex; /* Use flexbox for wrapping pills */
+            flex-wrap: wrap; /* Allow pills to wrap to new lines */
+            align-content: flex-start; /* Align wrapped lines to the start */
+        }
+        /* Custom scrollbar styling for a cleaner look */
+        .scrollable-content::-webkit-scrollbar {
+            width: 6px; /* Thinner scrollbar */
+        }
+        .scrollable-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        .scrollable-content::-webkit-scrollbar-thumb {
+            background: #cbd5e0; /* A light gray shade */
+            border-radius: 10px;
+        }
+        .scrollable-content::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0; /* Darker shade on hover */
+        }
+
+        /* Specific styles for the bottom sidebar controls */
+        .sidebar-bottom-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 1rem;
+            border-top: 1px solid #edf2f7; /* Very light border */
+            margin-top: 1rem;
+        }
+        .sidebar-bottom-controls button {
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #4a5568;
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+        }
+        .sidebar-bottom-controls button:hover {
+            background-color: #edf2f7;
+            border-color: #cbd5e0;
+        }
+        .sidebar-bottom-controls .icon-btn {
+            font-size: 1.2rem;
+            cursor: pointer;
+            color: #718096;
+            transition: color 0.15s ease-in-out;
+        }
+        .sidebar-bottom-controls .icon-btn:hover {
+            color: #4a5568;
+        }
+        .search-input {
+            width: 100%;
+            padding: 0.6rem 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            font-size: 0.9rem;
+            color: #4a5568;
+            background-color: #f7fafc;
+            margin-top: 1rem;
+            transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+        }
+        .search-input:focus {
+            outline: none;
+            border-color: #a7c5ed;
+            box-shadow: 0 0 0 2px rgba(167, 197, 237, 0.3);
+        }
+
+        /* Agent Status Display */
+        #agentStatus {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            background-color: rgba(255, 255, 255, 0.9); /* Semi-transparent white background */
+            border: 1px solid #e2e8f0;
+            border-radius: 9999px; /* Pill shape */
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            color: #4a5568;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            z-index: 10; /* Ensure it's above the network graph */
+            display: flex;
+            align-items: center;
+            min-width: 150px; /* Ensure it has a minimum width */
+            justify-content: center;
+        }
+        #agentStatus .spinner {
+            border: 2px solid #f3f3f3; /* Light grey */
+            border-top: 2px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Reset View Button */
+        #resetViewButton {
+            position: absolute;
+            bottom: 1rem;
+            left: 1rem;
+            background-color: #f7fafc;
+            color: #4a5568;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #e2e8f0;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out;
+            z-index: 10;
+        }
+        #resetViewButton:hover {
+            background-color: #edf2f7;
+            border-color: #cbd5e0;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+    <!-- Main content area: network graph and sidebar -->
+    <main class="flex flex-grow p-4 space-x-4">
+        <!-- Network Graph Section -->
+        <div class="flex-grow main-content-wrapper p-4 flex flex-col">
+            <!-- Top Bar Titles -->
+            <div class="absolute top-4 right-4 text-3xl font-bold text-gray-800">Infinite Craft</div>
+
+            <div id="network" class="flex-grow"></div>
+            
+            <!-- Agent Status Display -->
+            <div id="agentStatus">
+                <div class="spinner"></div>
+                <span id="agentStatusText">Agent Idle...</span>
+            </div>
+
+            <!-- Reset View Button -->
+            <button id="resetViewButton">Reset View</button>
+        </div>
+
+        <!-- Right Sidebar Section -->
+        <div class="w-1/4 flex flex-col sidebar">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800">Elements</h2> <!-- General title for the list -->
+            </div>
+            <!-- Discovered Elements List -->
+            <div id="elementsList" class="scrollable-content flex-grow mb-4">
+                <!-- Elements will be listed here by JavaScript -->
+            </div>
+
+            <!-- Agent Activity Log (hidden from UI, but messages still logged to console) -->
+            <div id="agentLog" class="log-entry"></div>
+
+            <!-- Removed bottom controls for the sidebar -->
+            <!--
+            <div class="sidebar-bottom-controls">
+                <button>Discoveries</button>
+                <button>Time</button>
+                <div class="flex space-x-3">
+                    <span class="icon-btn">🌙</span>
+                    <span class="icon-btn">🔊</span>
+                </div>
+            </div>
+            -->
+            <!-- Search bar -->
+            <div class="mt-4">
+                <input type="text" id="elementSearch" placeholder="Search (0 items)" class="search-input">
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global variables required by the environment (even if not directly used for Firestore in this app)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- Vis.js Network Initialization ---
+        let nodes = new vis.DataSet([]); // DataSet for network nodes
+        let edges = new vis.DataSet([]); // DataSet for network edges
+        let network; // Variable to hold the Vis.js network instance
+        let currentFocusedNodeId = null; // To keep track of the currently focused node
+
+        const container = document.getElementById('network'); // DOM element for the network graph
+        const data = { nodes: nodes, edges: edges }; // Data object for Vis.js
+        const options = {
+            // Configuration options for the network graph
+            nodes: {
+                shape: 'box', // Pill-like shape
+                size: 30, // Base size for nodes, adjusted for compact look
+                margin: 10, // Increased margin around the text in the box for more breathing room
+                font: {
+                    size: 18, /* Slightly larger font size for better readability */
+                    color: '#333',
+                    face: 'Outfit', // Updated font face to Outfit
+                    strokeWidth: 1.5, /* Thinner stroke */
+                    strokeColor: '#fff',
+                    bold: {
+                        color: '#1a202c',
+                        size: 20, /* Larger bold font */
+                        face: 'Outfit' // Updated font face to Outfit
+                    }
+                },
+                borderWidth: 1, /* Thinner border to match screenshot */
+                color: {
+                    background: '#ffffff', /* White background for nodes */
+                    border: '#e2e8f0', /* Light gray border */
+                    highlight: {
+                        background: '#f0f4ff', /* Light blue on hover */
+                        border: '#a7c5ed' /* Medium blue border on hover */
+                    }
+                },
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0,0,0,0.05)', /* Very subtle shadow */
+                    size: 3, /* Smaller shadow size */
+                    x: 0,
+                    y: 1
+                },
+                widthConstraint: {
+                    minimum: 100, /* Minimum width for the pill */
+                    maximum: 250 /* Maximum width for the pill */
+                },
+                heightConstraint: {
+                    minimum: 40 /* Minimum height for the pill */
+                }
+            },
+            edges: {
+                width: 1.5, /* Thinner edges for a cleaner look */
+                color: {
+                    color: '#cbd5e0', /* Lighter gray for edges */
+                    highlight: '#a7c5ed' /* Match node highlight color */
+                },
+                smooth: {
+                    type: 'continuous' /* Smooth edges */
+                },
+                arrows: {
+                    to: {
+                        enabled: true,
+                        scaleFactor: 0.6 /* Smaller arrowheads */
+                    }
+                }
+            },
+            physics: {
+                forceAtlas2Based: {
+                    gravitationalConstant: -200, /* Increased repulsion to spread nodes out more */
+                    centralGravity: 0.05, /* Slightly reduced central gravity to allow more spread */
+                    springLength: 500, /* Increased spring length for greater separation between connected nodes */
+                    springConstant: 0.01, /* Softer springs for less rigidity */
+                    damping: 0.4 /* Added damping to reduce oscillations and stabilize faster */
+                },
+                maxVelocity: 50, /* Increased max velocity for faster movement during stabilization */
+                solver: 'forceAtlas2Based', /* Use ForceAtlas2 layout algorithm */
+                timestep: 0.3, /* Slightly decreased timestep for more granular calculations */
+                stabilization: {
+                    enabled: true,
+                    iterations: 5000, /* Increased iterations for better stabilization */
+                    updateInterval: 25,
+                    fit: true /* Fit view after stabilization */
+                }
+            },
+            interaction: {
+                dragNodes: true, /* Allow dragging nodes */
+                dragView: true, /* Allow dragging the view */
+                zoomView: true /* Allow zooming the view */
+            }
+        };
+
+        // Initialize the network when the window has fully loaded
+        window.onload = function() {
+            network = new vis.Network(container, data, options);
+
+            // Add a ResizeObserver to the network container
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    if (entry.target === container) {
+                        clearTimeout(container.resizeTimer);
+                        container.resizeTimer = setTimeout(() => {
+                            network.fit();
+                            network.redraw();
+                        }, 100);
+                    }
+                }
+            });
+            resizeObserver.observe(container);
+
+            // Event listener for node clicks on the graph
+            network.on("selectNode", function (params) {
+                if (params.nodes.length === 1) {
+                    const nodeId = params.nodes[0];
+                    focusOnNode(nodeId);
+                }
+            });
+
+            // Event listener for clicking on empty space to reset view
+            network.on("click", function (params) {
+                if (params.nodes.length === 0 && params.edges.length === 0) {
+                    resetGraphView();
+                }
+            });
+
+            // Event listener for the "Reset View" button
+            document.getElementById('resetViewButton').addEventListener('click', resetGraphView);
+
+            initializeGame();
+        };
+
+        // --- Game State Variables ---
+        let discoveredElements = new Map();
+        let nextElementId = 0;
+
+        const elementsList = document.getElementById('elementsList');
+        const elementSearchInput = document.getElementById('elementSearch');
+        const agentStatusText = document.getElementById('agentStatusText');
+        const agentStatusSpinner = document.querySelector('#agentStatus .spinner');
+
+
+        // --- Gemini API Configuration ---
+        const API_KEY = ""; // API key is intentionally left blank. The environment will provide it at runtime.
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+
+        /**
+         * Updates the agent status display in the bottom right corner.
+         * @param {string} message - The message to display.
+         * @param {boolean} showSpinner - Whether to show the loading spinner.
+         */
+        function updateAgentStatus(message, showSpinner) {
+            agentStatusText.textContent = message;
+            if (showSpinner) {
+                agentStatusSpinner.style.display = 'inline-block';
+            } else {
+                agentStatusSpinner.style.display = 'none';
+            }
+        }
+
+        /**
+         * Adds a new element to the game state, updates the network graph, and the elements list.
+         * @param {string} name - The name of the element.
+         * @param {string} emoji - The emoji representing the element.
+         * @returns {object} The newly added element object, or the existing one if it was a duplicate.
+         */
+        function addElement(name, emoji) {
+            if (discoveredElements.has(name)) {
+                return discoveredElements.get(name);
+            }
+
+            const newElement = { id: nextElementId++, name, emoji };
+            discoveredElements.set(name, newElement);
+
+            // Node label format: Emoji Name (as per screenshot)
+            nodes.add({ id: newElement.id, label: `${newElement.emoji} ${newElement.name}` });
+            network.fit(); // Fit the network view after adding a new node
+
+            updateElementsList();
+            return newElement;
+        }
+
+        /**
+         * Adds a new combination (edges) to the network graph, showing how elements combine.
+         * @param {object} element1 - The first element used in the combination.
+         * @param {object} element2 - The second element used in the combination.
+         * @param {object} resultElement - The element produced by the combination.
+         */
+        function addCombination(element1, element2, resultElement) {
+            const existingEdge1 = edges.get({
+                filter: function (edge) {
+                    return edge.from === element1.id && edge.to === resultElement.id;
+                }
+            });
+            if (existingEdge1.length === 0) {
+                edges.add({ from: element1.id, to: resultElement.id, arrows: 'to' });
+            }
+
+            const existingEdge2 = edges.get({
+                filter: function (edge) {
+                    return edge.from === element2.id && edge.to === resultElement.id;
+                }
+            });
+            if (existingEdge2.length === 0) {
+                edges.add({ from: element2.id, to: resultElement.id, arrows: 'to' });
+            }
+            network.fit(); // Fit the network view after adding new edges
+        }
+
+        /**
+         * Updates the list of discovered elements displayed in the right sidebar,
+         * applying a filter if a search query is present.
+         */
+        function updateElementsList() {
+            elementsList.innerHTML = '';
+            const searchQuery = elementSearchInput.value.toLowerCase();
+
+            const sortedElements = Array.from(discoveredElements.values())
+                .filter(element => element.name.toLowerCase().includes(searchQuery))
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            sortedElements.forEach(element => {
+                const div = document.createElement('div');
+                div.className = 'element-item';
+                // Add 'selected' class if this element is currently focused in the graph
+                if (currentFocusedNodeId !== null && nodes.get(currentFocusedNodeId) && nodes.get(currentFocusedNodeId).label === `${element.emoji} ${element.name}`) {
+                    div.classList.add('selected');
+                }
+                div.innerHTML = `<span class="element-emoji">${element.emoji}</span><span>${element.name}</span>`;
+                // Add click listener to sidebar elements to focus on them in the graph
+                div.addEventListener('click', () => {
+                    const elementInGraph = Array.from(nodes.get()).find(node => node.label === `${element.emoji} ${element.name}`);
+                    if (elementInGraph) {
+                        focusOnNode(elementInGraph.id);
+                        network.selectNodes([elementInGraph.id]); // Visually select the node
+                    }
+                });
+                elementsList.appendChild(div);
+            });
+
+            // Update search bar placeholder with current item count
+            elementSearchInput.placeholder = `Search (${discoveredElements.size} items)`;
+        }
+
+        // Add event listener for search input
+        elementSearchInput.addEventListener('input', updateElementsList);
+
+
+        /**
+         * Logs an agent's action or discovery message to the console.
+         * The UI component for this log has been removed to match the screenshot.
+         * @param {string} message - The message string to log.
+         */
+        function logAgentActivity(message) {
+            console.log(`Agent Log: ${message}`);
+            // The UI component for this log has been removed to match the screenshot.
+            // Update the new agent status display instead.
+            updateAgentStatus(message, true); // Show spinner while combining
+        }
+
+        /**
+         * Calls the Gemini API to combine two elements and generate a new one.
+         * @param {string} element1Name - The name of the first element.
+         * @param {string} element2Name - The name of the second element.
+         * @returns {Promise<object|null>} A promise that resolves to an object { name: string, emoji: string }
+         * if successful, or null if an error occurs or the response format is invalid.
+         */
+        async function combineElementsWithAI(element1Name, element2Name) {
+            logAgentActivity(`Combining: ${element1Name} + ${element2Name}...`);
+            // Improved prompt for higher quality and more consistent responses
+            const prompt = `You are an AI that creates new elements by combining two existing elements.
+            Combine "${element1Name}" and "${element2Name}".
+            Your response MUST ONLY contain the new element's name, followed by a single, highly relevant emoji.
+            Do NOT include any other text, punctuation, explanations, or conversational filler.
+            Example format: "NewElement 🌟"
+            Ensure the emoji is directly related to the new element.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+
+                if (result.error) {
+                    const errorMessage = result.error.message || "Unknown API error";
+                    updateAgentStatus(`API Error: ${errorMessage}`, false); // Hide spinner on error
+                    console.error('Gemini API Error:', result.error);
+                    return null;
+                }
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const text = result.candidates[0].content.parts[0].text.trim();
+                    // Regex to capture the name and the last emoji(s)
+                    const match = text.match(/^(.*?)\s*(\p{Emoji_Presentation}|\p{Emoji_Modifier_Base}|\p{Emoji_Component}|\p{Emoji}|\u200d|\ufe0f)+$/u);
+
+                    if (match && match[1] && match[2]) {
+                        const name = match[1].trim();
+                        const emoji = match[2].trim();
+                        updateAgentStatus(`Discovered: ${name} ${emoji}`, false); // Hide spinner on success
+                        return { name, emoji };
+                    } else {
+                        updateAgentStatus(`AI response format error`, false); // Hide spinner on error
+                        console.error('AI response format error: Expected "Name Emoji", got:', text);
+                        return null;
+                    }
+                } else {
+                    updateAgentStatus('AI did not return a valid candidate', false); // Hide spinner on error
+                    console.error('AI did not return a valid candidate:', result);
+                    return null;
+                }
+            } catch (error) {
+                updateAgentStatus(`Network Error: ${error.message}`, false); // Hide spinner on error
+                console.error('Error calling Gemini API:', error);
+                return null;
+            }
+        }
+
+        /**
+         * The main loop for the AI agent. It continuously picks two random elements,
+         * attempts to combine them via the Gemini API, and updates the game state.
+         */
+        async function agentLoop() {
+            if (discoveredElements.size < 2) {
+                updateAgentStatus("Waiting for more elements...", false);
+                setTimeout(agentLoop, 7000);
+                return;
+            }
+
+            const elementsArray = Array.from(discoveredElements.values());
+
+            let element1, element2;
+            do {
+                const index1 = Math.floor(Math.random() * elementsArray.length);
+                const index2 = Math.floor(Math.random() * elementsArray.length);
+                element1 = elementsArray[index1];
+                element2 = elementsArray[index2];
+            } while (element1.id === element2.id);
+
+            const newElementData = await combineElementsWithAI(element1.name, element2.name);
+
+            if (newElementData) {
+                if (!discoveredElements.has(newElementData.name)) {
+                    const resultElement = addElement(newElementData.name, newElementData.emoji);
+                    addCombination(element1, element2, resultElement);
+                } else {
+                    updateAgentStatus(`Re-discovered: ${newElementData.name} ${newElementData.emoji}`, false);
+                    const existingResultElement = discoveredElements.get(newElementData.name);
+                    addCombination(element1, element2, existingResultElement);
+                }
+            }
+
+            setTimeout(agentLoop, 7000);
+        }
+
+        /**
+         * Focuses the graph view on a specific node, highlighting its direct connections
+         * and fading out unrelated elements.
+         * @param {number} nodeId - The ID of the node to focus on.
+         */
+        function focusOnNode(nodeId) {
+            currentFocusedNodeId = nodeId; // Set the currently focused node
+
+            const allNodes = nodes.get({ returnType: "Object" });
+            const allEdges = edges.get({ returnType: "Object" });
+
+            const connectedNodes = network.getConnectedNodes(nodeId);
+            const connectedEdges = network.getConnectedEdges(nodeId);
+
+            let updatedNodes = [];
+            let updatedEdges = [];
+
+            // Update nodes: Highlight selected and connected, fade others
+            for (const id in allNodes) {
+                if (id == nodeId || connectedNodes.includes(parseInt(id))) {
+                    // Keep original color or highlight
+                    updatedNodes.push({
+                        id: parseInt(id),
+                        color: options.nodes.color.background,
+                        font: { color: options.nodes.font.color, strokeWidth: options.nodes.font.strokeWidth, strokeColor: options.nodes.font.strokeColor },
+                        shadow: options.nodes.shadow,
+                        hidden: false // Ensure it's visible
+                    });
+                } else {
+                    // Fade out non-connected nodes more aggressively
+                    updatedNodes.push({
+                        id: parseInt(id),
+                        color: { background: '#f8f8f8', border: '#eef2f6', highlight: { background: '#f8f8f8', border: '#eef2f6' } },
+                        font: { color: '#e0e0e0', strokeWidth: 0, strokeColor: 'transparent' },
+                        shadow: { enabled: false },
+                        hidden: false // Still visible but faded
+                    });
+                }
+            }
+
+            // Update edges: Highlight connected, fade others
+            for (const id in allEdges) {
+                if (connectedEdges.includes(id)) {
+                    // Keep original color or highlight
+                    updatedEdges.push({
+                        id: id,
+                        color: options.edges.color.color,
+                        width: options.edges.width,
+                        hidden: false // Ensure it's visible
+                    });
+                } else {
+                    // Make non-connected edges almost invisible
+                    updatedEdges.push({
+                        id: id,
+                        color: { color: '#f8f8f8', opacity: 0.1 }, // Very low opacity
+                        width: 0.5, // Very thin
+                        hidden: false // Still visible but very faded
+                    });
+                }
+            }
+
+            nodes.update(updatedNodes);
+            edges.update(updatedEdges);
+
+            network.focus(nodeId, {
+                scale: 1.0,
+                animation: {
+                    duration: 500,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+
+            // Update sidebar selection
+            document.querySelectorAll('.element-item').forEach(item => item.classList.remove('selected'));
+            const focusedElement = nodes.get(nodeId);
+            if (focusedElement) {
+                // Find the sidebar item by matching the full label text, excluding the emoji for robust matching
+                const focusedElementName = focusedElement.label.substring(focusedElement.label.indexOf(' ') + 1);
+                const sidebarItem = Array.from(elementsList.children).find(item => item.textContent.includes(focusedElementName));
+                if (sidebarItem) {
+                    sidebarItem.classList.add('selected');
+                }
+            }
+        }
+
+        /**
+         * Resets the graph view to show all elements with their default appearance.
+         */
+        function resetGraphView() {
+            currentFocusedNodeId = null; // Clear the focused node
+
+            let updatedNodes = [];
+            let updatedEdges = [];
+
+            // Reset all nodes to their default appearance
+            nodes.forEach(node => {
+                updatedNodes.push({
+                    id: node.id,
+                    color: options.nodes.color.background,
+                    font: { color: options.nodes.font.color, strokeWidth: options.nodes.font.strokeWidth, strokeColor: options.nodes.font.strokeColor },
+                    shadow: options.nodes.shadow,
+                    hidden: false
+                });
+            });
+
+            // Reset all edges to their default appearance
+            edges.forEach(edge => {
+                updatedEdges.push({
+                    id: edge.id,
+                    color: options.edges.color.color,
+                    width: options.edges.width,
+                    hidden: false
+                });
+            });
+
+            nodes.update(updatedNodes);
+            edges.update(updatedEdges);
+
+            network.fit({
+                animation: {
+                    duration: 500,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+
+            // Remove sidebar selection
+            document.querySelectorAll('.element-item').forEach(item => item.classList.remove('selected'));
+        }
+
+        /**
+         * Initializes the game by adding the starting elements ("Fire" and "Water")
+         * and then starts the AI agent's loop.
+         */
+        function initializeGame() {
+            const fire = addElement("Fire", "🔥");
+            const water = addElement("Water", "💧");
+
+            updateAgentStatus("Game started! Initial elements added.", false);
+            agentLoop();
+        }
+    </script>
+</body>
+</html>
