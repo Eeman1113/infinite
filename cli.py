@@ -1,329 +1,1497 @@
-import ollama
-import random
-import time
-import re
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
-from rich.text import Text
-from rich.live import Live
-from rich.status import Status
-from rich.layout import Layout
-from rich.align import Align
-import asyncio # Import asyncio for async operations
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Craft</title>
+    <!-- Google Fonts - Outfit -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Tailwind CSS CDN for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Vis.js CDN for network graph visualization -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <style>
+        /* Custom styles for the game */
+        body {
+            font-family: "Outfit", sans-serif;
+            background-color: #f8fafc;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+        }
+        
+        /* Dark mode styles */
+        body.dark-mode {
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        
+        /* Styling for the network graph container */
+        #network {
+            width: 100%;
+            height: 100%;
+            background-color: #ffffff;
+            background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='5' cy='5' r='0.5' fill='%23e2e8f0' /%3E%3C/svg%3E");
+            background-repeat: repeat;
+            background-size: 10px 10px;
+            transition: background-color 0.3s ease, background-image 0.3s ease;
+        }
+        
+        body.dark-mode #network {
+            background-color: #2d3748;
+            background-image: url("data:image/svg+xml,%3Csvg width='10' height='10' viewBox='0 0 10 10' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='5' cy='5' r='0.5' fill='%234a5568' /%3E%3C/svg%3E");
+        }
 
-# Initialize Rich Console
-console = Console()
+        /* Main content wrapper */
+        .main-content-wrapper {
+            background-color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        body.dark-mode .main-content-wrapper {
+            background-color: #2d3748;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
 
-# --- Game State Variables ---
-discovered_elements = {}  # Stores elements as {name: {"emoji": "🔥", "id": 0}}
-next_element_id = 0
-combinations_made = set() # To store unique combinations to avoid redundant API calls
-# Store combinations as frozenset of element names to ensure order-independence
-# e.g., frozenset({"Fire", "Water"})
+        /* Sidebar styling */
+        .sidebar {
+            background-color: #ffffff;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+        
+        body.dark-mode .sidebar {
+            background-color: #2d3748;
+            box-shadow: 0 6px 20px rgba(0,0,0,0.2);
+        }
 
-# Global variables for agent status, managed by update_agent_status
-agent_status_message = "Initializing..."
-show_spinner = False
+        /* Element items in the list */
+        .element-item {
+            display: flex;
+            align-items: center;
+            padding: 0.6rem 1.25rem;
+            margin: 0.3rem;
+            background-color: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #2d3748;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        
+        body.dark-mode .element-item {
+            background-color: #2d3748;
+            border-color: #4a5568;
+            color: #e2e8f0;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
 
-# List to store formatted log messages for display in the "Crafting Log" panel
-# Each entry will be a rich.text.Text object
-formatted_log_lines = []
+        .element-item:hover {
+            background-color: #f0f4ff;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        body.dark-mode .element-item:hover {
+            background-color: #3c4a63;
+        }
 
-# --- Ollama Configuration ---
-OLLAMA_MODEL = 'gemma3:12b' # Using the largest model provided by the user
-OLLAMA_HOST = 'http://localhost:11434' # Default Ollama host
+        .element-item.selected {
+            background-color: #e0f2fe;
+            border-color: #90cdf4;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        body.dark-mode .element-item.selected {
+            background-color: #3c4a63;
+            border-color: #63b3ed;
+        }
 
-# Initialize Ollama client with the specified host
-ollama_client = ollama.Client(host=OLLAMA_HOST)
+        .element-emoji {
+            font-size: 1.3rem;
+            margin-right: 0.5rem;
+            line-height: 1;
+        }
 
-# --- Helper Functions ---
+        /* Scrollable content */
+        .scrollable-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+            display: flex;
+            flex-wrap: wrap;
+            align-content: flex-start;
+        }
 
-def update_agent_status(status_text: str, spinner: bool = True):
-    """Updates the agent status message."""
-    global agent_status_message
-    global show_spinner
-    agent_status_message = status_text
-    show_spinner = spinner
+        /* Custom scrollbar */
+        .scrollable-content::-webkit-scrollbar {
+            width: 6px;
+        }
 
-def add_element(name: str, emoji: str):
-    """Adds a new element to the game state if it doesn't already exist."""
-    global next_element_id
-    if name not in discovered_elements:
-        discovered_elements[name] = {"emoji": emoji, "id": next_element_id}
-        next_element_id += 1
-        return True
-    return False # Element already exists
+        .scrollable-content::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
+        }
+        
+        body.dark-mode .scrollable-content::-webkit-scrollbar-track {
+            background: #2d3748;
+        }
 
-def get_element_display_name(element_name: str) -> str:
-    """Returns the formatted display name for an element."""
-    element_info = discovered_elements.get(element_name)
-    if element_info:
-        return f"{element_info['emoji']} {element_name}"
-    return element_name # Fallback if element not found (shouldn't happen for discovered)
+        .scrollable-content::-webkit-scrollbar-thumb {
+            background: #cbd5e0;
+            border-radius: 10px;
+        }
+        
+        body.dark-mode .scrollable-content::-webkit-scrollbar-thumb {
+            background: #4a5568;
+        }
 
-def add_log_entry(log_type: str, element1: str = None, element2: str = None, result: str = None, message: str = None):
-    """
-    Adds a structured log entry to be formatted and displayed in the crafting log.
-    log_type: "discovery", "re-discovery", "error", "info"
-    """
-    # Calculate max log lines based on console height to prevent overflow
-    # Subtracting extra lines for header, footer, and panel borders/padding
-    max_log_lines = console.height - 15 
+        .scrollable-content::-webkit-scrollbar-thumb:hover {
+            background: #a0aec0;
+        }
+        
+        body.dark-mode .scrollable-content::-webkit-scrollbar-thumb:hover {
+            background: #718096;
+        }
 
-    log_text = Text()
-    if log_type == "discovery":
-        # Format for new discoveries: "Element1 + Element2 => NewResult (New!)" in bold green/blue
-        e1_display = get_element_display_name(element1)
-        e2_display = get_element_display_name(element2)
-        result_display = get_element_display_name(result)
-        log_text.append(f"{e1_display} ", style="bold blue")
-        log_text.append("+", style="white")
-        log_text.append(f" {e2_display} ", style="bold blue")
-        log_text.append("=>", style="white")
-        log_text.append(f" {result_display}", style="bold green")
-        log_text.append(" (New!)", style="green italic")
-    elif log_type == "re-discovery":
-        # Format for re-discoveries: "Element1 + Element2 => ExistingResult (Re-discovered)" in dimmed yellow/blue
-        e1_display = get_element_display_name(element1)
-        e2_display = get_element_display_name(element2)
-        result_display = get_element_display_name(result)
-        log_text.append(f"{e1_display} ", style="dim blue")
-        log_text.append("+", style="dim white")
-        log_text.append(f" {e2_display} ", style="dim blue")
-        log_text.append("=>", style="dim white")
-        log_text.append(f" {result_display}", style="dim yellow")
-        log_text.append(" (Re-discovered)", style="yellow italic dim")
-    elif log_type == "error":
-        # Format for errors in bold red
-        log_text.append(f"[ERROR] {message}", style="bold red")
-    elif log_type == "info":
-        # Format for general information messages in dimmed white
-        log_text.append(message, style="dim white")
+        /* Search input */
+        .search-input {
+            width: 100%;
+            padding: 0.7rem 1.25rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 0.95rem;
+            color: #4a5568;
+            background-color: #f7fafc;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        
+        body.dark-mode .search-input {
+            background-color: #4a5568;
+            border-color: #4a5568;
+            color: #e2e8f0;
+        }
 
-    formatted_log_lines.append(log_text)
-    
-    # Keep only the latest log entries to fit the display area
-    if len(formatted_log_lines) > max_log_lines:
-        formatted_log_lines.pop(0) # Remove the oldest message
+        .search-input:focus {
+            outline: none;
+            border-color: #a7c5ed;
+            box-shadow: 0 0 0 2px rgba(167, 197, 237, 0.3);
+        }
+        
+        body.dark-mode .search-input:focus {
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.3);
+        }
 
-def create_game_layout(elements_panel, status_panel):
-    """Creates the Rich Layout for the game display."""
-    layout = Layout()
-    layout.split(
-        Layout(name="header", size=3),
-        Layout(name="main"),
-        Layout(name="footer", size=5)
-    )
-    layout["main"].split_row(
-        Layout(name="elements_list"),
-        Layout(name="combinations_graph") # Placeholder for graph visualization (not implemented in CLI)
-    )
+        /* Agent status */
+        #agentStatus {
+            position: absolute;
+            bottom: 1rem;
+            right: 1rem;
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #e2e8f0;
+            border-radius: 9999px;
+            padding: 0.5rem 1rem;
+            font-size: 0.9rem;
+            color: #4a5568;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            min-width: 150px;
+            justify-content: center;
+            backdrop-filter: blur(5px);
+            transition: all 0.3s ease;
+        }
+        
+        body.dark-mode #agentStatus {
+            background-color: rgba(45, 55, 72, 0.95);
+            border-color: #4a5568;
+            color: #e2e8f0;
+        }
 
-    layout["header"].update(
-        Align.center(
-            Text("✨ Infinite Craft (CLI Edition) ✨", style="bold magenta on black", justify="center"),
-            vertical="middle"
-        )
-    )
-    layout["elements_list"].update(elements_panel)
-    
-    # Display the captured log messages in the combinations_graph panel
-    # Join the rich.text.Text objects with newlines for display
-    log_content = Text("\n").join(formatted_log_lines)
-    layout["combinations_graph"].update(
-        Panel(
-            log_content,
-            title="[bold green]Crafting Log[/bold green]",
-            border_style="green",
-            height=elements_panel.height # Match height of elements panel for consistent layout
-        )
-    )
-    layout["footer"].update(status_panel)
-    return layout
+        #agentStatus .spinner {
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #3498db;
+            border-radius: 50%;
+            width: 12px;
+            height: 12px;
+            animation: spin 1s linear infinite;
+            margin-right: 0.5rem;
+        }
 
-def generate_elements_panel():
-    """Generates the Rich Panel for the discovered elements list."""
-    table = Table(box=None, show_header=False, show_lines=False, padding=0)
-    table.add_column("Elements", justify="left", style="white")
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
 
-    sorted_elements = sorted(discovered_elements.keys())
-    for name in sorted_elements:
-        emoji = discovered_elements[name]["emoji"]
-        table.add_row(f"[bold]{emoji}[/bold] {name}")
+        /* Control buttons */
+        .control-button {
+            background-color: #ffffff;
+            color: #4a5568;
+            padding: 0.6rem 1.25rem;
+            border-radius: 10px;
+            border: 1px solid #e2e8f0;
+            font-size: 0.95rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+        
+        body.dark-mode .control-button {
+            background-color: #4a5568;
+            border-color: #4a5568;
+            color: #e2e8f0;
+        }
 
-    return Panel(
-        table,
-        title=f"[bold cyan]Discovered Elements ({len(discovered_elements)})[/bold cyan]",
-        border_style="cyan",
-        height=console.height - 10 # Adjust height dynamically based on console size
-    )
+        .control-button:hover {
+            background-color: #edf2f7;
+            border-color: #cbd5e0;
+        }
+        
+        body.dark-mode .control-button:hover {
+            background-color: #3c4a63;
+            border-color: #3c4a63;
+        }
 
-def generate_status_panel(status_message: str, show_spinner: bool):
-    """Generates the Rich Panel for the agent status."""
-    status_text = Text(status_message, style="italic yellow" if show_spinner else "bold green")
-    if show_spinner:
-        # Rich's Status object handles the spinner animation
-        return Panel(
-            Status(status_text, spinner="dots", spinner_style="yellow"),
-            title="[bold blue]Agent Status[/bold blue]",
-            border_style="blue",
-            height=3
-        )
-    else:
-        return Panel(
-            Align.center(status_text, vertical="middle"),
-            title="[bold blue]Agent Status[/bold blue]",
-            border_style="blue",
-            height=3
-        )
+        .control-button i {
+            margin-right: 0.5rem;
+        }
 
-async def combine_elements_with_ai(element1_name: str, element2_name: str):
-    """
-    Calls the Ollama API to combine two elements and generate a new one.
-    Returns a dictionary {name: str, emoji: str} or None on failure.
-    """
-    update_agent_status(f"Combining: {element1_name} + {element2_name}...", spinner=True)
+        /* Stats display */
+        .stats-display {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 1rem;
+            padding: 0.75rem;
+            background-color: #f8fafc;
+            border-radius: 0.5rem;
+            font-size: 0.85rem;
+            color: #4a5568;
+            transition: all 0.3s ease;
+        }
+        
+        body.dark-mode .stats-display {
+            background-color: #4a5568;
+            color: #e2e8f0;
+        }
 
-    prompt = f"""You are an AI that creates new elements by combining two existing elements.
-Combine "{element1_name}" and "{element2_name}".
-The new element MUST be a plausible, real-world concept or a commonly understood combination.
-Your response MUST ONLY contain the new element's name, followed by a single, highly relevant emoji.
-Do NOT create fictional, abstract, or overly fantastical elements.
-Do NOT include any other text, punctuation, explanations, or conversational filler.
-Example format: "NewElement 🌟"
-Ensure the emoji is directly related to the new element."""
+        .stat-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
 
-    try:
-        # Use the initialized ollama_client instead of direct ollama.generate()
-        response = ollama_client.generate(
-            model=OLLAMA_MODEL,
-            prompt=prompt,
-            options={
-                'temperature': 0.7,
-                'top_k': 40,
-                'top_p': 0.9,
+        .stat-value {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #1a365d;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .stat-value {
+            color: #ebf8ff;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #718096;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .stat-label {
+            color: #cbd5e0;
+        }
+
+        /* Tooltip */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltip-text {
+            visibility: hidden;
+            width: 200px;
+            background-color: #2d3748;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 0.5rem;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            transition: opacity 0.3s;
+            font-size: 0.8rem;
+            font-weight: normal;
+        }
+
+        .tooltip:hover .tooltip-text {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 1024px) {
+            .sidebar {
+                width: 35%;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .main-content-wrapper {
+                border-radius: 0;
+            }
+
+            .sidebar {
+                width: 100%;
+                border-radius: 0;
+                position: absolute;
+                right: -100%;
+                top: 0;
+                height: 100%;
+                z-index: 20;
+                transition: right 0.3s ease;
+            }
+
+            .sidebar.active {
+                right: 0;
+            }
+
+            #toggleSidebar {
+                display: block;
+            }
+        }
+
+        /* Animation for new elements */
+        @keyframes gentlePulse {
+            0% { transform: scale(1); box-shadow: 0 0 0 rgba(99, 179, 237, 0); }
+            50% { transform: scale(1.03); box-shadow: 0 0 12px rgba(99, 179, 237, 0.2); }
+            100% { transform: scale(1); box-shadow: 0 0 0 rgba(99, 179, 237, 0); }
+        }
+
+        .new-element {
+            animation: gentlePulse 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Hover animations */
+        .element-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.08);
+        }
+
+        .control-button:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+
+        /* Dark mode toggle */
+        .dark-mode-toggle {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+
+        .dark-mode-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .dark-mode-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e0;
+            transition: .4s;
+            border-radius: 24px;
+        }
+
+        .dark-mode-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .dark-mode-slider {
+            background-color: #4a5568;
+        }
+
+        input:checked + .dark-mode-slider:before {
+            transform: translateX(26px);
+        }
+
+        /* Text colors */
+        .text-gray-800 {
+            color: #2d3748;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-800 {
+            color: #e2e8f0;
+        }
+        
+        .text-gray-200 {
+            color: #e2e8f0;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-200 {
+            color: #2d3748;
+        }
+        
+        .text-gray-600 {
+            color: #718096;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-600 {
+            color: #a0aec0;
+        }
+        
+        .text-gray-400 {
+            color: #a0aec0;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-400 {
+            color: #718096;
+        }
+        
+        .text-gray-500 {
+            color: #a0aec0;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-500 {
+            color: #718096;
+        }
+        
+        .text-gray-700 {
+            color: #4a5568;
+            transition: color 0.3s ease;
+        }
+        
+        body.dark-mode .text-gray-700 {
+            color: #e2e8f0;
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+    <!-- Mobile sidebar toggle button -->
+    <button id="toggleSidebar" class="fixed top-4 right-4 z-30 p-2 bg-white rounded-full shadow-lg md:hidden dark:bg-gray-700">
+        <i class="fas fa-bars text-gray-700 dark:text-gray-200"></i>
+    </button>
+
+    <!-- Main content area: network graph and sidebar -->
+    <main class="flex flex-grow p-4 space-x-4">
+        <!-- Network Graph Section -->
+        <div class="flex-grow main-content-wrapper p-4 flex flex-col">
+            <!-- Top Bar Titles -->
+            <div class="absolute top-4 left-4 flex items-center space-x-4">
+                <h1 class="text-2xl font-bold text-gray-800 dark:text-gray-200">Infinite Craft</h1>
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm text-gray-600 dark:text-gray-400">Dark Mode</span>
+                    <label class="dark-mode-toggle">
+                        <input type="checkbox" id="darkModeToggle">
+                        <span class="dark-mode-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div id="network" class="flex-grow"></div>
+
+            <!-- Agent Status Display -->
+            <div id="agentStatus">
+                <div class="spinner"></div>
+                <span id="agentStatusText">Agent Idle...</span>
+            </div>
+
+            <!-- Control Buttons -->
+            <div class="absolute bottom-4 left-4 flex space-x-2">
+                <button id="resetViewButton" class="control-button">
+                    <i class="fas fa-expand"></i> Reset View
+                </button>
+                <button id="pauseAgentButton" class="control-button">
+                    <i class="fas fa-pause"></i> Pause
+                </button>
+                <button id="manualCombineButton" class="control-button">
+                    <i class="fas fa-random"></i> Manual Combine
+                </button>
+            </div>
+        </div>
+
+        <!-- Right Sidebar Section -->
+        <div id="sidebar" class="w-1/4 flex flex-col sidebar">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-800 dark:text-gray-200">Elements</h2>
+                <div class="tooltip">
+                    <i class="fas fa-info-circle text-gray-500 dark:text-gray-400 cursor-pointer"></i>
+                    <span class="tooltip-text">Click on elements to focus them in the graph. The AI will automatically combine elements to discover new ones.</span>
+                </div>
+            </div>
+
+            <!-- Stats Display -->
+            <div class="stats-display dark:bg-gray-700">
+                <div class="stat-item">
+                    <span class="stat-value" id="totalElements">0</span>
+                    <span class="stat-label">Elements</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="combinations">0</span>
+                    <span class="stat-label">Combinations</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="discoveryRate">0</span>
+                    <span class="stat-label">Per Minute</span>
+                </div>
+            </div>
+
+            <!-- Discovered Elements List -->
+            <div id="elementsList" class="scrollable-content flex-grow mb-4"></div>
+
+            <!-- Search bar -->
+            <div class="mt-4">
+                <input type="text" id="elementSearch" placeholder="Search (0 items)" class="search-input dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200">
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Global variables
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- Vis.js Network Initialization ---
+        let nodes = new vis.DataSet([]);
+        let edges = new vis.DataSet([]);
+        let network;
+        let currentFocusedNodeId = null;
+        let isDarkMode = false;
+
+        const container = document.getElementById('network');
+        const data = { nodes: nodes, edges: edges };
+
+        // Dark mode options
+        const lightOptions = {
+            nodes: {
+                shape: 'box',
+                size: 30,
+                margin: 12,
+                font: {
+                    size: 16,
+                    color: '#2d3748',
+                    face: 'Outfit, "Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif',
+                    strokeWidth: 2,
+                    strokeColor: '#ffffff',
+                    bold: {
+                        color: '#1a365d',
+                        size: 16,
+                        face: 'Outfit, "Segoe UI Emoji", "Apple Color Emoji", "Segoe UI Symbol", "Noto Color Emoji", sans-serif'
+                    }
+                },
+                borderWidth: 1.5,
+                color: {
+                    background: '#ffffff',
+                    border: '#cbd5e0',
+                    highlight: {
+                        background: '#ebf8ff',
+                        border: '#90cdf4'
+                    }
+                },
+                shadow: {
+                    enabled: true,
+                    color: 'rgba(0,0,0,0.1)',
+                    size: 5,
+                    x: 0,
+                    y: 2
+                },
+                widthConstraint: {
+                    minimum: 120,
+                    maximum: 200
+                },
+                heightConstraint: {
+                    minimum: 45
+                }
             },
-            stream=False,
-        )
+            edges: {
+                width: 2,
+                color: {
+                    color: '#a0aec0',
+                    highlight: '#63b3ed',
+                    hover: '#4299e1'
+                },
+                smooth: {
+                    type: 'continuous',
+                    roundness: 0.3
+                },
+                arrows: {
+                    to: {
+                        enabled: true,
+                        scaleFactor: 0.8,
+                        type: 'arrow'
+                    }
+                },
+                selectionWidth: 3,
+                hoverWidth: 2.5
+            },
+            physics: {
+                forceAtlas2Based: {
+                    gravitationalConstant: -150,
+                    centralGravity: 0.03,
+                    springLength: 200,
+                    springConstant: 0.02,
+                    damping: 0.4,
+                    avoidOverlap: 1
+                },
+                maxVelocity: 40,
+                solver: 'forceAtlas2Based',
+                timestep: 0.5,
+                stabilization: {
+                    enabled: true,
+                    iterations: 2000,
+                    updateInterval: 25,
+                    fit: true
+                },
+                repulsion: {
+                    nodeDistance: 300,
+                    centralGravity: 0.1
+                }
+            },
+            interaction: {
+                dragNodes: true,
+                dragView: true,
+                zoomView: true
+            }
+        };
 
-        if 'response' in response:
-            text = response['response'].strip()
+        const darkOptions = {
+            ...lightOptions,
+            nodes: {
+                ...lightOptions.nodes,
+                font: {
+                    ...lightOptions.nodes.font,
+                    color: '#e2e8f0',
+                    strokeColor: '#2d3748',
+                    bold: {
+                        ...lightOptions.nodes.font.bold,
+                        color: '#ebf8ff'
+                    }
+                },
+                color: {
+                    background: '#2d3748',
+                    border: '#4a5568',
+                    highlight: {
+                        background: '#3c4a63',
+                        border: '#63b3ed'
+                    }
+                },
+                shadow: {
+                    ...lightOptions.nodes.shadow,
+                    color: 'rgba(0,0,0,0.2)'
+                }
+            },
+            edges: {
+                ...lightOptions.edges,
+                color: {
+                    color: '#718096',
+                    highlight: '#63b3ed',
+                    hover: '#4299e1'
+                }
+            },
+            physics: {
+                ...lightOptions.physics,
+                forceAtlas2Based: {
+                    ...lightOptions.physics.forceAtlas2Based,
+                    gravitationalConstant: -120
+                }
+            }
+        };
+
+        // Initialize the network when the window has fully loaded
+        window.onload = function() {
+            // Check for saved dark mode preference
+            const savedDarkMode = localStorage.getItem('darkMode') === 'true';
+            if (savedDarkMode) {
+                document.body.classList.add('dark-mode');
+                document.getElementById('darkModeToggle').checked = true;
+                isDarkMode = true;
+                network = new vis.Network(container, data, darkOptions);
+            } else {
+                network = new vis.Network(container, data, lightOptions);
+            }
+
+            // Add a ResizeObserver to the network container
+            const resizeObserver = new ResizeObserver(entries => {
+                for (let entry of entries) {
+                    if (entry.target === container) {
+                        clearTimeout(container.resizeTimer);
+                        container.resizeTimer = setTimeout(() => {
+                            network.fit();
+                            network.redraw();
+                        }, 100);
+                    }
+                }
+            });
+            resizeObserver.observe(container);
+
+            // Event listener for node clicks on the graph
+            network.on("selectNode", function (params) {
+                if (params.nodes.length === 1) {
+                    const nodeId = params.nodes[0];
+                    focusOnNode(nodeId);
+                }
+            });
+
+            // Event listener for clicking on empty space to reset view
+            network.on("click", function (params) {
+                if (params.nodes.length === 0 && params.edges.length === 0) {
+                    resetGraphView();
+                }
+            });
+
+            // Event listener for the "Reset View" button
+            document.getElementById('resetViewButton').addEventListener('click', resetGraphView);
+
+            // Event listener for dark mode toggle
+            document.getElementById('darkModeToggle').addEventListener('change', toggleDarkMode);
+
+            // Event listener for pause button
+            document.getElementById('pauseAgentButton').addEventListener('click', toggleAgentPause);
+
+            // Event listener for manual combine button
+            document.getElementById('manualCombineButton').addEventListener('click', manualCombine);
+
+            // Event listener for mobile sidebar toggle
+            document.getElementById('toggleSidebar').addEventListener('click', toggleSidebar);
+
+            initializeGame();
+        };
+
+        // --- Game State Variables ---
+        let discoveredElements = new Map();
+        let nextElementId = 0;
+        let totalCombinations = 0;
+        let discoveriesLastMinute = 0;
+        let discoveriesThisMinute = 0;
+        let isAgentPaused = false;
+        let agentLoopTimeout;
+        let manualCombineMode = false;
+        let selectedElements = [];
+
+        const elementsList = document.getElementById('elementsList');
+        const elementSearchInput = document.getElementById('elementSearch');
+        const agentStatusText = document.getElementById('agentStatusText');
+        const agentStatusSpinner = document.querySelector('#agentStatus .spinner');
+        const totalElementsDisplay = document.getElementById('totalElements');
+        const combinationsDisplay = document.getElementById('combinations');
+        const discoveryRateDisplay = document.getElementById('discoveryRate');
+
+        // --- Gemini API Configuration ---
+        const API_KEY = "AIzaSyCTyBJ5dQZoWWgB14Wjd0l7heigxDRT-qs";
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${API_KEY}`;
+
+        // Update stats every second
+        setInterval(updateStats, 1000);
+        // Reset discoveries per minute counter every minute
+        setInterval(() => {
+            discoveriesLastMinute = discoveriesThisMinute;
+            discoveriesThisMinute = 0;
+        }, 60000);
+
+        function updateStats() {
+            totalElementsDisplay.textContent = discoveredElements.size;
+            combinationsDisplay.textContent = totalCombinations;
+            discoveryRateDisplay.textContent = discoveriesLastMinute;
+        }
+
+        /**
+         * Toggles dark mode on and off
+         */
+        function toggleDarkMode() {
+            isDarkMode = !isDarkMode;
+            localStorage.setItem('darkMode', isDarkMode);
             
-            # Split the response to separate name and emoji
-            parts = text.rsplit(' ', 1) # Split from right, at most once
-            if len(parts) == 2 and parts[0].strip() and parts[1].strip():
-                name = parts[0].strip()
-                emoji = parts[1].strip()
-                
-                # Basic check to ensure the second part is likely an emoji
-                if any(ord(char) > 127 for char in emoji) and not re.search(r'[a-zA-Z0-9]', emoji):
-                    update_agent_status(f"Discovered: {name} {emoji}", spinner=False)
-                    return {"name": name, "emoji": emoji}
-                else:
-                    update_agent_status(f"AI response format error: {text} (Emoji part invalid)", spinner=False)
-                    add_log_entry("error", message=f"AI response format error: Expected 'Name Emoji', got: '{text}' (Invalid emoji part)")
-                    return None
-            else:
-                update_agent_status(f"AI response format error: {text}", spinner=False)
-                add_log_entry("error", message=f"AI response format error: Expected 'Name Emoji', got: '{text}'")
-                return None
-        else:
-            update_agent_status("Ollama did not return a valid response.", spinner=False)
-            add_log_entry("error", message=f"Ollama did not return a valid response: {response}")
-            return None
-    except ollama.ResponseError as e:
-        update_agent_status(f"Ollama API Error: {e}", spinner=False)
-        add_log_entry("error", message=f"Ollama API Error: {e}")
-        return None
-    except Exception as e:
-        update_agent_status(f"Network/Other Error: {e}", spinner=False)
-        add_log_entry("error", message=f"Error calling Ollama: {e}")
-        return None
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+                network.setOptions(darkOptions);
+            } else {
+                document.body.classList.remove('dark-mode');
+                network.setOptions(lightOptions);
+            }
 
-async def agent_single_combination_attempt():
-    """Performs a single combination attempt and updates game state."""
-    if len(discovered_elements) < 2:
-        update_agent_status("Waiting for more elements...", spinner=False)
-        return
-
-    elements_list = list(discovered_elements.keys())
-    
-    element1_name, element2_name = None, None
-    
-    # Try to find a new combination
-    attempts = 0
-    max_attempts = 50 # Prevent infinite loops if all combinations are exhausted
-    while attempts < max_attempts:
-        element1_name = random.choice(elements_list)
-        element2_name = random.choice(elements_list)
-
-        # Ensure elements are different
-        if element1_name == element2_name:
-            attempts += 1
-            continue
-
-        # Ensure combination hasn't been tried before (order-independent)
-        current_combination = frozenset({element1_name, element2_name})
-        if current_combination not in combinations_made:
-            combinations_made.add(current_combination)
-            break
-        attempts += 1
-    else:
-        update_agent_status("All known combinations exhausted or no new pairs found!", spinner=False)
-        return # No new combination found, return
-
-    new_element_data = await combine_elements_with_ai(element1_name, element2_name)
-
-    if new_element_data:
-        # Check if the element is truly new or a re-discovery
-        if add_element(new_element_data["name"], new_element_data["emoji"]):
-            add_log_entry("discovery", element1=element1_name, element2=element2_name, result=new_element_data["name"])
-        else:
-            add_log_entry("re-discovery", element1=element1_name, element2=element2_name, result=new_element_data["name"])
-    
-    # After a combination attempt, wait before the next one to control API call rate
-    await asyncio.sleep(7) 
-
-async def main():
-    """Initializes the game and starts the agent loop."""
-    global agent_status_message
-    global show_spinner
-
-    console.clear() # Clear console for a clean start
-    console.print(Panel(Text("Starting Infinite Craft...", justify="center", style="bold yellow"), border_style="yellow"))
-    await asyncio.sleep(1) # Short delay for initial message
-
-    # Add initial elements
-    add_element("Fire", "🔥")
-    add_element("Water", "💧")
-    add_element("Earth", "🌍")
-    add_element("Wind", "🌬️")
-    
-    # Log the addition of initial elements
-    add_log_entry("info", message="Initial elements added: Fire, Water, Earth, Wind.")
-
-    agent_status_message = "Game started! Initial elements added."
-    show_spinner = False
-
-    # Use Rich's Live context manager to continuously update the console display
-    with Live(screen=True, refresh_per_second=4) as live:
-        while True:
-            # Generate and update the UI panels
-            elements_panel = generate_elements_panel()
-            status_panel = generate_status_panel(agent_status_message, show_spinner)
-            game_layout = create_game_layout(elements_panel, status_panel)
-            live.update(game_layout)
+            // Redraw the network to apply changes
+            network.redraw();
             
-            # Perform a single combination attempt by the AI agent
-            await agent_single_combination_attempt() 
+            // Update all nodes and edges to match the new theme
+            updateAllNodesAndEdges();
+        }
+        
+        /**
+         * Updates all nodes and edges to match the current theme
+         */
+        function updateAllNodesAndEdges() {
+            const allNodes = nodes.get({ returnType: "Object" });
+            const allEdges = edges.get({ returnType: "Object" });
+            
+            let updatedNodes = [];
+            let updatedEdges = [];
+            
+            // Update all nodes
+            for (const id in allNodes) {
+                updatedNodes.push({
+                    id: parseInt(id),
+                    color: isDarkMode ? darkOptions.nodes.color : lightOptions.nodes.color,
+                    font: isDarkMode ? darkOptions.nodes.font : lightOptions.nodes.font,
+                    shadow: isDarkMode ? darkOptions.nodes.shadow : lightOptions.nodes.shadow
+                });
+            }
+            
+            // Update all edges
+            for (const id in allEdges) {
+                updatedEdges.push({
+                    id: id,
+                    color: isDarkMode ? darkOptions.edges.color : lightOptions.edges.color,
+                    width: isDarkMode ? darkOptions.edges.width : lightOptions.edges.width
+                });
+            }
+            
+            nodes.update(updatedNodes);
+            edges.update(updatedEdges);
+            
+            // If we have a focused node, reapply the focus style
+            if (currentFocusedNodeId !== null) {
+                focusOnNode(currentFocusedNodeId);
+            }
+        }
 
-if __name__ == "__main__":
-    import asyncio
-    try:
-        asyncio.run(main())
-    except KeyboardInterrupt:
-        console.print("\n[bold red]Game stopped by user.[/bold red]")
-    except Exception as e:
-        console.print(f"\n[bold red]An unexpected error occurred:[/bold red] {e}")
+        /**
+         * Toggles the sidebar on mobile devices
+         */
+        function toggleSidebar() {
+            document.getElementById('sidebar').classList.toggle('active');
+        }
 
+        /**
+         * Toggles the agent pause state
+         */
+        function toggleAgentPause() {
+            isAgentPaused = !isAgentPaused;
+            const button = document.getElementById('pauseAgentButton');
+
+            if (isAgentPaused) {
+                button.innerHTML = '<i class="fas fa-play"></i> Resume';
+                updateAgentStatus("Agent Paused", false);
+                clearTimeout(agentLoopTimeout);
+            } else {
+                button.innerHTML = '<i class="fas fa-pause"></i> Pause';
+                agentLoop();
+            }
+        }
+
+        /**
+         * Updates the agent status display
+         * @param {string} message - The message to display
+         * @param {boolean} showSpinner - Whether to show the loading spinner
+         */
+        function updateAgentStatus(message, showSpinner) {
+            agentStatusText.textContent = message;
+            if (showSpinner) {
+                agentStatusSpinner.style.display = 'inline-block';
+            } else {
+                agentStatusSpinner.style.display = 'none';
+            }
+        }
+
+        /**
+         * Adds a new element to the game state
+         * @param {string} name - The name of the element
+         * @param {string} emoji - The emoji representing the element
+         * @returns {object} The newly added element object
+         */
+        function addElement(name, emoji) {
+            if (discoveredElements.has(name)) {
+                return discoveredElements.get(name);
+            }
+
+            const newElement = { id: nextElementId++, name, emoji };
+            discoveredElements.set(name, newElement);
+
+            // Node label format: Emoji Name
+            nodes.add({ 
+                id: newElement.id, 
+                label: `${newElement.emoji} ${newElement.name}`,
+                color: isDarkMode ? darkOptions.nodes.color : lightOptions.nodes.color,
+                font: isDarkMode ? darkOptions.nodes.font : lightOptions.nodes.font,
+                shadow: isDarkMode ? darkOptions.nodes.shadow : lightOptions.nodes.shadow
+            });
+
+            // Fit the network view after adding a new node
+            setTimeout(() => {
+                network.fit({
+                    animation: {
+                        duration: 500,
+                        easingFunction: "easeInOutQuad"
+                    }
+                });
+            }, 100);
+
+            updateElementsList();
+            updateStats();
+            return newElement;
+        }
+
+        /**
+         * Adds a new combination to the network graph
+         * @param {object} element1 - The first element
+         * @param {object} element2 - The second element
+         * @param {object} resultElement - The resulting element
+         */
+        function addCombination(element1, element2, resultElement) {
+            const existingEdge1 = edges.get({
+                filter: function (edge) {
+                    return edge.from === element1.id && edge.to === resultElement.id;
+                }
+            });
+
+            if (existingEdge1.length === 0) {
+                edges.add({ 
+                    from: element1.id, 
+                    to: resultElement.id, 
+                    arrows: 'to',
+                    color: isDarkMode ? darkOptions.edges.color : lightOptions.edges.color,
+                    width: isDarkMode ? darkOptions.edges.width : lightOptions.edges.width
+                });
+            }
+
+            const existingEdge2 = edges.get({
+                filter: function (edge) {
+                    return edge.from === element2.id && edge.to === resultElement.id;
+                }
+            });
+
+            if (existingEdge2.length === 0) {
+                edges.add({ 
+                    from: element2.id, 
+                    to: resultElement.id, 
+                    arrows: 'to',
+                    color: isDarkMode ? darkOptions.edges.color : lightOptions.edges.color,
+                    width: isDarkMode ? darkOptions.edges.width : lightOptions.edges.width
+                });
+            }
+
+            totalCombinations++;
+            updateStats();
+        }
+
+        /**
+         * Updates the list of discovered elements
+         */
+        function updateElementsList() {
+            elementsList.innerHTML = '';
+            const searchQuery = elementSearchInput.value.toLowerCase();
+
+            const sortedElements = Array.from(discoveredElements.values())
+                .filter(element => element.name.toLowerCase().includes(searchQuery))
+                .sort((a, b) => a.name.localeCompare(b.name));
+
+            sortedElements.forEach(element => {
+                const div = document.createElement('div');
+                div.className = 'element-item';
+
+                // Add 'selected' class if this element is currently focused in the graph
+                if (currentFocusedNodeId !== null && nodes.get(currentFocusedNodeId) && 
+                    nodes.get(currentFocusedNodeId).label === `${element.emoji} ${element.name}`) {
+                    div.classList.add('selected');
+                }
+
+                // Add 'selected-for-combine' class if in manual combine mode and selected
+                if (manualCombineMode && selectedElements.includes(element.id)) {
+                    div.classList.add('selected-for-combine');
+                    div.style.backgroundColor = isDarkMode ? '#4c7caf' : '#bee3f8';
+                }
+
+                div.innerHTML = `<span class="element-emoji">${element.emoji}</span><span>${element.name}</span>`;
+
+                // Add click listener to sidebar elements
+                div.addEventListener('click', () => {
+                    if (manualCombineMode) {
+                        toggleElementSelection(element);
+                    } else {
+                        const elementInGraph = Array.from(nodes.get()).find(node => 
+                            node.label === `${element.emoji} ${element.name}`);
+                        if (elementInGraph) {
+                            focusOnNode(elementInGraph.id);
+                            network.selectNodes([elementInGraph.id]);
+                        }
+                    }
+                });
+
+                elementsList.appendChild(div);
+            });
+
+            // Update search bar placeholder with current item count
+            elementSearchInput.placeholder = `Search (${discoveredElements.size} items)`;
+        }
+
+        /**
+         * Toggles an element's selection in manual combine mode
+         * @param {object} element - The element to toggle selection for
+         */
+        function toggleElementSelection(element) {
+            const index = selectedElements.indexOf(element.id);
+            if (index === -1) {
+                if (selectedElements.length < 2) {
+                    selectedElements.push(element.id);
+                } else {
+                    selectedElements.shift();
+                    selectedElements.push(element.id);
+                }
+            } else {
+                selectedElements.splice(index, 1);
+            }
+
+            updateElementsList();
+
+            // If we have 2 selected elements, combine them
+            if (selectedElements.length === 2) {
+                const element1 = Array.from(discoveredElements.values()).find(e => e.id === selectedElements[0]);
+                const element2 = Array.from(discoveredElements.values()).find(e => e.id === selectedElements[1]);
+
+                if (element1 && element2) {
+                    manualCombineElements(element1, element2);
+                }
+            }
+        }
+
+        /**
+         * Logs agent activity
+         * @param {string} message - The message to log
+         */
+        function logAgentActivity(message) {
+            console.log(`Agent Log: ${message}`);
+            updateAgentStatus(message, true);
+        }
+
+        /**
+         * Calls the Gemini API to combine two elements
+         * @param {string} element1Name - The first element's name
+         * @param {string} element2Name - The second element's name
+         * @returns {Promise<object|null>} The new element data or null
+         */
+        async function combineElementsWithAI(element1Name, element2Name) {
+            logAgentActivity(`Combining: ${element1Name} + ${element2Name}...`);
+
+            const prompt = `You are an AI that creates new elements by combining two existing elements.
+            Combine "${element1Name}" and "${element2Name}".
+            The new element MUST be a plausible, real-world concept or a commonly understood combination.
+            Your response MUST ONLY contain the new element's name, followed by a single, highly relevant emoji.
+            Do NOT create fictional, abstract, or overly fantastical elements.
+            Do NOT include any other text, punctuation, explanations, or conversational filler.
+            Example format: "NewElement 🌟"
+            Ensure the emoji is directly related to the new element.`;
+
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const result = await response.json();
+
+                if (result.error) {
+                    const errorMessage = result.error.message || "Unknown API error";
+                    updateAgentStatus(`API Error: ${errorMessage}`, false);
+                    console.error('Gemini API Error:', result.error);
+                    return null;
+                }
+
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+
+                    const text = result.candidates[0].content.parts[0].text.trim();
+                    const match = text.match(/^(.*?)\s*(\p{Emoji_Presentation}|\p{Emoji_Modifier_Base}|\p{Emoji_Component}|\p{Emoji}|\u200d|\ufe0f)+$/u);
+
+                    if (match && match[1] && match[2]) {
+                        const name = match[1].trim();
+                        const emoji = match[2].trim();
+                        discoveriesThisMinute++;
+                        updateAgentStatus(`Discovered: ${name} ${emoji}`, false);
+                        return { name, emoji };
+                    } else {
+                        updateAgentStatus(`AI response format error`, false);
+                        console.error('AI response format error: Expected "Name Emoji", got:', text);
+                        return null;
+                    }
+                } else {
+                    updateAgentStatus('AI did not return a valid candidate', false);
+                    console.error('AI did not return a valid candidate:', result);
+                    return null;
+                }
+            } catch (error) {
+                updateAgentStatus(`Network Error: ${error.message}`, false);
+                console.error('Error calling Gemini API:', error);
+                return null;
+            }
+        }
+
+        /**
+         * The main AI agent loop
+         */
+        async function agentLoop() {
+            if (isAgentPaused || manualCombineMode) {
+                return;
+            }
+
+            if (discoveredElements.size < 2) {
+                updateAgentStatus("Waiting for more elements...", false);
+                agentLoopTimeout = setTimeout(agentLoop, 7000);
+                return;
+            }
+
+            const elementsArray = Array.from(discoveredElements.values());
+            let element1, element2;
+
+            // Try to find a combination that hasn't been tried yet
+            let attempts = 0;
+            const maxAttempts = 10;
+            let foundNewCombination = false;
+
+            do {
+                const index1 = Math.floor(Math.random() * elementsArray.length);
+                const index2 = Math.floor(Math.random() * elementsArray.length);
+                element1 = elementsArray[index1];
+                element2 = elementsArray[index2];
+
+                // Check if this combination has already been tried
+                const existingEdges = edges.get({
+                    filter: function(edge) {
+                        return (edge.from === element1.id && edges.get({
+                            filter: e => e.from === element2.id && e.to === edge.to
+                        }).length > 0);
+                    }
+                });
+
+                if (existingEdges.length === 0) {
+                    foundNewCombination = true;
+                    break;
+                }
+
+                attempts++;
+            } while (attempts < maxAttempts && !foundNewCombination);
+
+            // If we didn't find a new combination, just pick random elements
+            if (!foundNewCombination) {
+                do {
+                    const index1 = Math.floor(Math.random() * elementsArray.length);
+                    const index2 = Math.floor(Math.random() * elementsArray.length);
+                    element1 = elementsArray[index1];
+                    element2 = elementsArray[index2];
+                } while (element1.id === element2.id);
+            }
+
+            const newElementData = await combineElementsWithAI(element1.name, element2.name);
+
+            if (newElementData) {
+                if (!discoveredElements.has(newElementData.name)) {
+                    const resultElement = addElement(newElementData.name, newElementData.emoji);
+                    addCombination(element1, element2, resultElement);
+
+                    // Highlight the new element in the sidebar
+                    const newElementDiv = Array.from(elementsList.children).find(div => 
+                        div.textContent.includes(newElementData.name));
+                    if (newElementDiv) {
+                        newElementDiv.classList.add('new-element');
+                        setTimeout(() => {
+                            newElementDiv.classList.remove('new-element');
+                        }, 2000);
+                    }
+                } else {
+                    updateAgentStatus(`Re-discovered: ${newElementData.name} ${newElementData.emoji}`, false);
+                    const existingResultElement = discoveredElements.get(newElementData.name);
+                    addCombination(element1, element2, existingResultElement);
+                }
+            }
+
+            agentLoopTimeout = setTimeout(agentLoop, 7000);
+        }
+
+        /**
+         * Focuses the graph view on a specific node
+         * @param {number} nodeId - The node ID to focus on
+         */
+        function focusOnNode(nodeId) {
+            currentFocusedNodeId = nodeId;
+            const allNodes = nodes.get({ returnType: "Object" });
+            const allEdges = edges.get({ returnType: "Object" });
+            const connectedNodes = network.getConnectedNodes(nodeId);
+            const connectedEdges = network.getConnectedEdges(nodeId);
+
+            let updatedNodes = [];
+            let updatedEdges = [];
+
+            // Update nodes
+            for (const id in allNodes) {
+                if (id == nodeId || connectedNodes.includes(parseInt(id))) {
+                    updatedNodes.push({
+                        id: parseInt(id),
+                        color: isDarkMode ? darkOptions.nodes.color : lightOptions.nodes.color,
+                        font: isDarkMode ? darkOptions.nodes.font : lightOptions.nodes.font,
+                        shadow: isDarkMode ? darkOptions.nodes.shadow : lightOptions.nodes.shadow,
+                        hidden: false
+                    });
+                } else {
+                    updatedNodes.push({
+                        id: parseInt(id),
+                        color: {
+                            background: isDarkMode ? '#3c4a63' : '#f8f8f8',
+                            border: isDarkMode ? '#4a5568' : '#eef2f6',
+                            highlight: {
+                                background: isDarkMode ? '#3c4a63' : '#f8f8f8',
+                                border: isDarkMode ? '#4a5568' : '#eef2f6'
+                            }
+                        },
+                        font: {
+                            color: isDarkMode ? '#a0aec0' : '#e0e0e0',
+                            strokeWidth: 0,
+                            strokeColor: 'transparent'
+                        },
+                        shadow: { enabled: false },
+                        hidden: false
+                    });
+                }
+            }
+
+            // Update edges
+            for (const id in allEdges) {
+                if (connectedEdges.includes(id)) {
+                    updatedEdges.push({
+                        id: id,
+                        color: isDarkMode ? darkOptions.edges.color : lightOptions.edges.color,
+                        width: isDarkMode ? darkOptions.edges.width : lightOptions.edges.width,
+                        hidden: false
+                    });
+                } else {
+                    updatedEdges.push({
+                        id: id,
+                        color: {
+                            color: isDarkMode ? '#4a5568' : '#f8f8f8',
+                            opacity: 0.1
+                        },
+                        width: 0.5,
+                        hidden: false
+                    });
+                }
+            }
+
+            nodes.update(updatedNodes);
+            edges.update(updatedEdges);
+
+            network.focus(nodeId, {
+                scale: 1.0,
+                animation: {
+                    duration: 500,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+
+            // Update sidebar selection
+            document.querySelectorAll('.element-item').forEach(item => item.classList.remove('selected'));
+            const focusedElement = nodes.get(nodeId);
+            if (focusedElement) {
+                const focusedElementName = focusedElement.label.substring(focusedElement.label.indexOf(' ') + 1);
+                const sidebarItem = Array.from(elementsList.children).find(item => item.textContent.includes(focusedElementName));
+                if (sidebarItem) {
+                    sidebarItem.classList.add('selected');
+                }
+            }
+        }
+
+        /**
+         * Resets the graph view to show all elements
+         */
+        function resetGraphView() {
+            currentFocusedNodeId = null;
+            let updatedNodes = [];
+            let updatedEdges = [];
+
+            // Reset all nodes
+            nodes.forEach(node => {
+                updatedNodes.push({
+                    id: node.id,
+                    color: isDarkMode ? darkOptions.nodes.color : lightOptions.nodes.color,
+                    font: isDarkMode ? darkOptions.nodes.font : lightOptions.nodes.font,
+                    shadow: isDarkMode ? darkOptions.nodes.shadow : lightOptions.nodes.shadow,
+                    hidden: false
+                });
+            });
+
+            // Reset all edges
+            edges.forEach(edge => {
+                updatedEdges.push({
+                    id: edge.id,
+                    color: isDarkMode ? darkOptions.edges.color : lightOptions.edges.color,
+                    width: isDarkMode ? darkOptions.edges.width : lightOptions.edges.width,
+                    hidden: false
+                });
+            });
+
+            nodes.update(updatedNodes);
+            edges.update(updatedEdges);
+
+            network.fit({
+                animation: {
+                    duration: 500,
+                    easingFunction: "easeInOutQuad"
+                }
+            });
+
+            // Remove sidebar selection
+            document.querySelectorAll('.element-item').forEach(item => item.classList.remove('selected'));
+        }
+
+        /**
+         * Toggles manual combine mode
+         */
+        function manualCombine() {
+            manualCombineMode = !manualCombineMode;
+            const button = document.getElementById('manualCombineButton');
+
+            if (manualCombineMode) {
+                button.innerHTML = '<i class="fas fa-times"></i> Cancel';
+                button.style.backgroundColor = isDarkMode ? '#4c7caf' : '#bee3f8';
+                updateAgentStatus("Select two elements to combine", false);
+                selectedElements = [];
+                updateElementsList();
+
+                // Pause the agent while in manual mode
+                if (!isAgentPaused) {
+                    toggleAgentPause();
+                }
+            } else {
+                button.innerHTML = '<i class="fas fa-random"></i> Manual Combine';
+                button.style.backgroundColor = '';
+                updateAgentStatus("Manual combine canceled", false);
+                selectedElements = [];
+                updateElementsList();
+            }
+        }
+
+        /**
+         * Manually combines two selected elements
+         * @param {object} element1 - The first element
+         * @param {object} element2 - The second element
+         */
+        async function manualCombineElements(element1, element2) {
+            updateAgentStatus(`Manually combining: ${element1.name} + ${element2.name}...`, true);
+
+            const newElementData = await combineElementsWithAI(element1.name, element2.name);
+
+            if (newElementData) {
+                if (!discoveredElements.has(newElementData.name)) {
+                    const resultElement = addElement(newElementData.name, newElementData.emoji);
+                    addCombination(element1, element2, resultElement);
+
+                    // Highlight the new element
+                    const newElementDiv = Array.from(elementsList.children).find(div => 
+                        div.textContent.includes(newElementData.name));
+                    if (newElementDiv) {
+                        newElementDiv.classList.add('new-element');
+                        setTimeout(() => {
+                            newElementDiv.classList.remove('new-element');
+                        }, 2000);
+                    }
+                } else {
+                    updateAgentStatus(`Re-discovered: ${newElementData.name} ${newElementData.emoji}`, false);
+                    const existingResultElement = discoveredElements.get(newElementData.name);
+                    addCombination(element1, element2, existingResultElement);
+                }
+            }
+
+            // Exit manual combine mode
+            manualCombineMode = false;
+            document.getElementById('manualCombineButton').innerHTML = '<i class="fas fa-random"></i> Manual Combine';
+            document.getElementById('manualCombineButton').style.backgroundColor = '';
+            selectedElements = [];
+            updateElementsList();
+
+            // Resume the agent if it was running before
+            if (!isAgentPaused) {
+                toggleAgentPause();
+            }
+        }
+
+        /**
+         * Initializes the game with starting elements
+         */
+        function initializeGame() {
+            // Add initial elements
+            const fire = addElement("Fire", "🔥");
+            const water = addElement("Water", "💧");
+            const earth = addElement("Earth", "🌍");
+            const air = addElement("Air", "💨");
+
+            // Add some initial combinations
+            setTimeout(() => {
+                const steam = addElement("Steam", "💨");
+                addCombination(fire, water, steam);
+
+                const lava = addElement("Lava", "🌋");
+                addCombination(fire, earth, lava);
+
+                const dust = addElement("Dust", "💨");
+                addCombination(earth, air, dust);
+
+                const rain = addElement("Rain", "🌧️");
+                addCombination(water, air, rain);
+            }, 1000);
+
+            updateAgentStatus("Game started! Initial elements added.", false);
+            agentLoop();
+        }
+    </script>
+</body>
+</html>
